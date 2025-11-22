@@ -24,12 +24,16 @@ import {
   Users,
   AlertTriangle,
   Lock,
-  UserPlus
+  UserPlus,
+  Key,
+  Shield,
+  ShieldAlert,
+  Check
 } from 'lucide-react';
 
 // --- Helper Components ---
 
-const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' }> = ({ 
+const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' }> = ({ 
   className = '', 
   variant = 'primary',
   type = 'button',
@@ -40,6 +44,7 @@ const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant
     primary: "bg-santander text-white hover:bg-[#cc0000]",
     secondary: "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50",
     danger: "bg-red-100 text-red-700 hover:bg-red-200 border border-red-200",
+    success: "bg-green-100 text-green-700 hover:bg-green-200 border border-green-200",
     ghost: "bg-transparent text-gray-600 hover:bg-gray-100 border-transparent px-2 py-1"
   };
   
@@ -92,6 +97,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState(''); // New state for login errors
   
   const [regName, setRegName] = useState('');
   const [regUsername, setRegUsername] = useState('');
@@ -107,6 +113,24 @@ export default function App() {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
 
+  // User Management State (Admin)
+  const [showUserManager, setShowUserManager] = useState(false);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  // Quick Add User State in Manager
+  const [mgrName, setMgrName] = useState('');
+  const [mgrUsername, setMgrUsername] = useState('');
+  const [mgrPassword, setMgrPassword] = useState('');
+  const [mgrRole, setMgrRole] = useState<Role>(Role.USER);
+  
+  // Edit User State (Inline Editing)
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    username: '',
+    role: Role.USER,
+    password: '' // Empty implies no change
+  });
+
   // Delete Confirmation Modal State
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [entryToDeleteId, setEntryToDeleteId] = useState<string | null>(null);
@@ -120,12 +144,21 @@ export default function App() {
     }
   }, [currentView, user]);
 
+  // Load users when user manager opens
+  useEffect(() => {
+    if (showUserManager && user?.role === Role.ADMIN) {
+      setAllUsers(db.users.getAll());
+    }
+  }, [showUserManager, user]);
+
   // -- Handlers --
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError(''); // Reset error on submit
+    
     if (!loginUsername || !loginPassword) {
-      alert("Please enter both username and password.");
+      setLoginError("Por favor, preencha usuário e senha.");
       return;
     }
 
@@ -139,8 +172,9 @@ export default function App() {
       setCurrentView('DASHBOARD');
       // Clear sensitive fields
       setLoginPassword('');
+      setLoginError('');
     } else {
-      alert("Invalid username or password.");
+      setLoginError("Usuário ou senha incorretos.");
     }
   };
 
@@ -179,8 +213,10 @@ export default function App() {
     setAuthMode('LOGIN');
     setLoginUsername('');
     setLoginPassword('');
+    setLoginError('');
     setDashboardSummary('');
     setShowCategoryManager(false);
+    setShowUserManager(false);
     setShowDeleteModal(false);
   };
 
@@ -308,6 +344,84 @@ export default function App() {
     setEditingCategoryName('');
   };
 
+  // --- User Management Handlers ---
+
+  const handleManagerAddUser = () => {
+    if (!mgrName || !mgrUsername || !mgrPassword) {
+      alert("Please fill in name, username and password.");
+      return;
+    }
+    try {
+      const newUser: User = {
+        id: Date.now().toString(),
+        name: mgrName,
+        username: mgrUsername,
+        password: mgrPassword,
+        role: mgrRole
+      };
+      const updatedUsers = db.users.add(newUser);
+      setAllUsers(updatedUsers);
+      // Reset form
+      setMgrName('');
+      setMgrUsername('');
+      setMgrPassword('');
+      setMgrRole(Role.USER);
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
+  const handleDeleteUser = (id: string) => {
+    if (id === user?.id) {
+      alert("You cannot delete your own account while logged in.");
+      return;
+    }
+    if (window.confirm("Are you sure you want to delete this user?")) {
+      const updatedUsers = db.users.delete(id);
+      setAllUsers(updatedUsers);
+    }
+  };
+
+  const handleStartEditUser = (u: User) => {
+    setEditingUserId(u.id);
+    setEditFormData({
+      name: u.name,
+      username: u.username,
+      role: u.role,
+      password: '' // Empty means don't change
+    });
+  };
+
+  const handleCancelEditUser = () => {
+    setEditingUserId(null);
+    setEditFormData({ name: '', username: '', role: Role.USER, password: '' });
+  };
+
+  const handleSaveEditUser = (originalUser: User) => {
+    if (!editFormData.name || !editFormData.username) {
+      alert("Name and Username are required.");
+      return;
+    }
+
+    const updatedUser: User = {
+      ...originalUser,
+      name: editFormData.name,
+      username: editFormData.username,
+      role: editFormData.role,
+      // Only update password if field is not empty
+      password: editFormData.password ? editFormData.password : originalUser.password
+    };
+
+    const updatedList = db.users.update(updatedUser);
+    setAllUsers(updatedList);
+    setEditingUserId(null);
+    
+    // If current logged in user updated themselves, update session
+    if (user?.id === updatedUser.id) {
+      setUser(updatedUser);
+    }
+  };
+
   const filteredEntries = useMemo(() => {
     let result = entries;
 
@@ -375,7 +489,7 @@ export default function App() {
         </div>
         
         <h1 className="text-2xl font-bold text-center text-gray-800 mb-2">
-          {authMode === 'LOGIN' ? 'Welcome Back' : 'Create Account'}
+          {authMode === 'LOGIN' ? 'Bem-vindo' : 'Criar Conta'}
         </h1>
         <p className="text-center text-gray-500 mb-8">
           IT Knowledge Base • Banco Santander
@@ -383,23 +497,31 @@ export default function App() {
         
         {authMode === 'LOGIN' ? (
           <form onSubmit={handleLoginSubmit} className="space-y-4">
+            
+            {loginError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative text-sm flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                <AlertTriangle size={16} className="flex-shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Usuário</label>
               <div className="relative">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
                   <UserIcon size={16} />
                 </div>
                 <Input 
                   value={loginUsername}
-                  onChange={(e) => setLoginUsername(e.target.value)}
-                  placeholder="Enter username"
-                  className="pl-10"
+                  onChange={(e) => { setLoginUsername(e.target.value); setLoginError(''); }}
+                  placeholder="Digite seu usuário"
+                  className={`pl-10 ${loginError ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : ''}`}
                   autoFocus
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
               <div className="relative">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
                   <Lock size={16} />
@@ -407,29 +529,29 @@ export default function App() {
                 <Input 
                   type="password"
                   value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Enter password"
-                  className="pl-10"
+                  onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
+                  placeholder="Digite sua senha"
+                  className={`pl-10 ${loginError ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : ''}`}
                 />
               </div>
             </div>
             
             <Button type="submit" className="w-full justify-center mt-6">
-              Sign In
+              Entrar
             </Button>
             
             <div className="mt-4 text-center">
-              <span className="text-sm text-gray-500">Don't have an account? </span>
+              <span className="text-sm text-gray-500">Não tem uma conta? </span>
               <button 
                 type="button"
-                onClick={() => setAuthMode('REGISTER')} 
+                onClick={() => { setAuthMode('REGISTER'); setLoginError(''); }} 
                 className="text-sm font-medium text-santander hover:underline"
               >
-                Sign up
+                Cadastre-se
               </button>
             </div>
             <div className="mt-4 pt-4 border-t border-gray-100 text-xs text-center text-gray-400">
-              Default credentials:<br/>
+              Credenciais padrão:<br/>
               User: <strong>admin</strong> / Pass: <strong>123</strong> (Admin)<br/>
               User: <strong>user</strong> / Pass: <strong>123</strong> (Staff)
             </div>
@@ -437,55 +559,55 @@ export default function App() {
         ) : (
           <form onSubmit={handleRegisterSubmit} className="space-y-4">
              <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
               <Input 
                 value={regName}
                 onChange={(e) => setRegName(e.target.value)}
-                placeholder="e.g. Maria Silva"
+                placeholder="Ex: Maria Silva"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Usuário</label>
               <Input 
                 value={regUsername}
                 onChange={(e) => setRegUsername(e.target.value)}
-                placeholder="Choose a username"
+                placeholder="Escolha um nome de usuário"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
               <Input 
                 type="password"
                 value={regPassword}
                 onChange={(e) => setRegPassword(e.target.value)}
-                placeholder="Choose a password"
+                placeholder="Escolha uma senha"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Permissão</label>
               <Select 
                 value={regRole} 
                 onChange={(e) => setRegRole(e.target.value as Role)}
               >
-                <option value={Role.USER}>Standard User (Read-Only)</option>
-                <option value={Role.ADMIN}>Administrator (Full Access)</option>
+                <option value={Role.USER}>Usuário Padrão (Leitura)</option>
+                <option value={Role.ADMIN}>Administrador (Acesso Total)</option>
               </Select>
             </div>
 
             <Button type="submit" className="w-full justify-center mt-6">
-              <UserPlus size={18} /> Create Account
+              <UserPlus size={18} /> Criar Conta
             </Button>
 
             <div className="mt-4 text-center">
               <button 
                 type="button"
-                onClick={() => setAuthMode('LOGIN')} 
+                onClick={() => { setAuthMode('LOGIN'); setLoginError(''); }} 
                 className="text-sm font-medium text-gray-500 hover:text-gray-800"
               >
-                ← Back to Login
+                ← Voltar para Login
               </button>
             </div>
           </form>
@@ -575,10 +697,139 @@ export default function App() {
     </div>
   );
 
+  const renderUserManager = () => (
+    <div className="fixed inset-0 bg-black/50 z-[55] flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+          <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+            <Users size={20} className="text-santander"/> Manage Users
+          </h3>
+          <button onClick={() => setShowUserManager(false)} className="text-gray-500 hover:text-gray-700" title="Close Manager">
+            <X size={20} />
+          </button>
+        </div>
+        
+        <div className="p-4 overflow-y-auto flex-1">
+          {/* Add User Form */}
+          <div className="bg-gray-50 p-4 rounded-md mb-6 border border-gray-200">
+             <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><UserPlus size={16}/> Add New User</h4>
+             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+               <Input placeholder="Full Name" value={mgrName} onChange={e => setMgrName(e.target.value)} className="text-sm" />
+               <Input placeholder="Username" value={mgrUsername} onChange={e => setMgrUsername(e.target.value)} className="text-sm" />
+               <Input placeholder="Password" value={mgrPassword} onChange={e => setMgrPassword(e.target.value)} className="text-sm" />
+               <Select value={mgrRole} onChange={e => setMgrRole(e.target.value as Role)} className="text-sm">
+                 <option value={Role.USER}>User</option>
+                 <option value={Role.ADMIN}>Admin</option>
+               </Select>
+             </div>
+             <Button onClick={handleManagerAddUser} className="w-full text-sm">Create User</Button>
+          </div>
+
+          <div className="overflow-x-auto pb-4">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-gray-200 text-sm text-gray-500 bg-gray-50">
+                  <th className="p-3">Name</th>
+                  <th className="p-3">Username</th>
+                  <th className="p-3">Role</th>
+                  <th className="p-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allUsers.map(u => {
+                  const isEditing = editingUserId === u.id;
+                  
+                  return (
+                    <tr key={u.id} className={`border-b border-gray-100 text-sm ${isEditing ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                      
+                      {isEditing ? (
+                        // Edit Mode
+                        <>
+                          <td className="p-2">
+                            <Input 
+                              value={editFormData.name} 
+                              onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                              className="py-1 text-sm"
+                              placeholder="Full Name"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <Input 
+                              value={editFormData.username} 
+                              onChange={(e) => setEditFormData({...editFormData, username: e.target.value})}
+                              className="py-1 text-sm"
+                              placeholder="Username"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <div className="flex flex-col gap-1">
+                              <Select 
+                                value={editFormData.role} 
+                                onChange={(e) => setEditFormData({...editFormData, role: e.target.value as Role})}
+                                className="py-1 text-sm"
+                              >
+                                <option value={Role.USER}>User</option>
+                                <option value={Role.ADMIN}>Admin</option>
+                              </Select>
+                              <Input 
+                                type="password"
+                                value={editFormData.password} 
+                                onChange={(e) => setEditFormData({...editFormData, password: e.target.value})}
+                                className="py-1 text-sm border-blue-200"
+                                placeholder="New password..."
+                              />
+                            </div>
+                          </td>
+                          <td className="p-2 text-right align-top">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="success" onClick={() => handleSaveEditUser(u)} className="px-2 py-1" title="Save Changes">
+                                <Check size={16} />
+                              </Button>
+                              <Button variant="secondary" onClick={handleCancelEditUser} className="px-2 py-1" title="Cancel">
+                                <X size={16} />
+                              </Button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        // View Mode
+                        <>
+                          <td className="p-3 font-medium text-gray-800">
+                            {u.name}
+                            {u.id === user?.id && <span className="ml-2 text-xs text-santander bg-red-50 px-1.5 py-0.5 rounded">(You)</span>}
+                          </td>
+                          <td className="p-3 text-gray-600">{u.username}</td>
+                          <td className="p-3">
+                            <Badge>{u.role}</Badge>
+                          </td>
+                          <td className="p-3 flex justify-end gap-2">
+                            <Button variant="ghost" onClick={() => handleStartEditUser(u)} title="Edit User (Name, Password, Role)" className="text-blue-600 hover:bg-blue-50">
+                              <Edit2 size={16} />
+                            </Button>
+                            {u.id !== user?.id && (
+                              <Button variant="ghost" onClick={() => handleDeleteUser(u.id)} title="Delete User" className="text-red-600 hover:bg-red-50">
+                                <Trash2 size={16} />
+                              </Button>
+                            )}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderDashboard = () => (
     <div className="space-y-6 relative">
-      {/* Category Manager Modal */}
+      {/* Modals */}
       {showCategoryManager && renderCategoryManager()}
+      {showUserManager && renderUserManager()}
 
       {/* Admin Customization Panel */}
       {user?.role === Role.ADMIN && (
@@ -606,14 +857,25 @@ export default function App() {
                   Reset
                 </Button>
              </div>
-             <Button 
-               variant="secondary" 
-               onClick={() => setShowCategoryManager(true)}
-               className="text-xs py-1 h-8"
-               title="Open Category Manager"
-             >
-               <Folder size={14} /> Manage Categories
-             </Button>
+             
+             <div className="flex gap-2">
+                <Button 
+                  variant="secondary" 
+                  onClick={() => setShowCategoryManager(true)}
+                  className="text-xs py-1 h-8"
+                  title="Open Category Manager"
+                >
+                  <Folder size={14} /> Categories
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  onClick={() => setShowUserManager(true)}
+                  className="text-xs py-1 h-8"
+                  title="Open User Manager"
+                >
+                  <Users size={14} /> Users
+                </Button>
+             </div>
            </div>
         </div>
       )}
@@ -922,8 +1184,12 @@ export default function App() {
     );
   };
 
+  // --- Date for Footer ---
+  const today = new Date();
+  const dateString = today.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+
   return (
-    <div className="min-h-screen pb-12 font-sans">
+    <div className="min-h-screen font-sans flex flex-col bg-[#f3f4f6]">
       {currentView === 'LOGIN' && renderLogin()}
       
       {currentView !== 'LOGIN' && (
@@ -952,11 +1218,23 @@ export default function App() {
             </div>
           </nav>
 
-          <main className="max-w-7xl mx-auto px-4">
+          <main className="max-w-7xl mx-auto px-4 flex-1 w-full">
             {currentView === 'DASHBOARD' && renderDashboard()}
             {currentView === 'CREATE' && renderCreate()}
             {currentView === 'DETAILS' && renderDetails()}
           </main>
+
+          {/* Footer */}
+          <footer className="bg-white border-t border-gray-200 mt-12 py-6">
+            <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center text-sm text-gray-500">
+               <div className="font-medium mb-2 md:mb-0">
+                 © {today.getFullYear()} Dnnethosting Sistemas. Todos os direitos reservados.
+               </div>
+               <div className="flex items-center gap-2">
+                 <span>{dateString}</span>
+               </div>
+            </div>
+          </footer>
         </>
       )}
     </div>

@@ -102,6 +102,20 @@ export const db = {
       return updated;
     },
 
+    delete: (id: string): User[] => {
+      const current = getStorage<User[]>(DB_KEYS.USERS, []);
+      const updated = current.filter(u => u.id !== id);
+      setStorage(DB_KEYS.USERS, updated);
+      return updated;
+    },
+
+    update: (updatedUser: User): User[] => {
+      const current = getStorage<User[]>(DB_KEYS.USERS, []);
+      const updated = current.map(u => u.id === updatedUser.id ? updatedUser : u);
+      setStorage(DB_KEYS.USERS, updated);
+      return updated;
+    },
+
     authenticate: (username: string, password: string): User | null => {
       const users = getStorage<User[]>(DB_KEYS.USERS, []);
       return users.find(u => u.username === username && u.password === password) || null;
