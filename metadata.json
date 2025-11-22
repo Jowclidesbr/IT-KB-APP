@@ -1,0 +1,5 @@
+{
+  "name": "Santander Knowledge Base (React Edition)",
+  "description": "A robust knowledge base application for IT teams featuring role-based access, content categorization, and AI-powered answer suggestions using Gemini. Built with React and Tailwind CSS.",
+  "requestFramePermissions": []
+}
